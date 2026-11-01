@@ -1,0 +1,19 @@
+data/
+*.json
+!package.json
+# The Claude Code mod's own config files (no transcript data in them)
+!mod/.claude-plugin/plugin.json
+!mod/hooks/hooks.json
+!mod/tsconfig.json
+node_modules/
+.chrome/
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
+.beads/proxieddb/
+
+# Python
+.venv/
+__pycache__/

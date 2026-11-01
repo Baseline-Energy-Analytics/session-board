@@ -1,0 +1,9 @@
+{
+  "name": "session-board",
+  "version": "0.1.0",
+  "description": "Companion to session-board, the terminal board for Claude Code sessions: a band above the prompt saying how many other sessions need you.",
+  "author": {
+    "name": "ryanckelly"
+  },
+  "types": "./types/index.d.ts"
+}

@@ -1,0 +1,19 @@
+[project]
+name = "session-board"
+version = "0.1.0"
+description = "Terminal board for Claude Code sessions: projects, sessions, summaries, and Enter to jump in."
+requires-python = ">=3.12"
+dependencies = ["textual"]
+
+[dependency-groups]
+dev = ["pytest"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["board"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
