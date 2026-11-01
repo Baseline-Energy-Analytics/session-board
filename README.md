@@ -28,7 +28,7 @@ leaves the machine.
 ## Install
 
 ```bash
-git clone git@github.com:ryanckelly/session-board.git ~/session-board
+git clone https://github.com/ryanckelly/session-board.git ~/session-board
 cd ~/session-board
 uv sync                                   # creates .venv with Textual
 ln -s ~/session-board/bin/board ~/.local/bin/board
@@ -122,3 +122,7 @@ claude plugin test mod/             # the mod
 `board/facts.py` turns Claude Code's files into sessions and states; `board/app.py` is the Textual app;
 `board/actions.py` wraps the `claude` CLI; `board/config.py` reads the settings. The tests never read the
 machine's own config or Claude Code folder.
+
+## License
+
+MIT; see `LICENSE`.

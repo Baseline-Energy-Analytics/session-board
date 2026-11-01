@@ -26,7 +26,7 @@ from .facts import HOME, Session
 
 GLYPH = {"needs you": "◆", "running": "●", "elsewhere": "●", "idle": "■", "stale": "◇", "ended": "○"}
 LABEL = {"elsewhere": "in another terminal", "stale": "not running"}
-NEEDS_YOU = "bold yellow"  # the only colour on the board: it marks what needs Ryan
+NEEDS_YOU = "bold yellow"  # the only colour on the board: it marks what needs you
 POLL_SECONDS = facts.CONFIG.poll
 STATE_WIDTH = 26    # "in another terminal · 13h"
 COLUMNS_WIDTH = 32  # " 182k ctx  Opus 5.5    310k out"
@@ -389,7 +389,7 @@ class Board(App):
     def __init__(self, source=facts.collect, runner: Runner | None = None, poll: float | None = POLL_SECONDS,
                  show_ended: bool = False, prefs_path: str | None = None, show_columns: bool = True):
         super().__init__()
-        # Ended sessions are hidden unless Ryan shows them with e; the filter always searches them.
+        # Ended sessions are hidden unless you show them with e; the filter always searches them.
         self.show_ended = show_ended
         self.show_columns = show_columns  # context, model and tokens on each row; c hides them
         self.prefs_path = prefs_path  # where the choice is remembered; None in tests
@@ -398,8 +398,8 @@ class Board(App):
         self.poll = poll
         self.sessions: dict[str, Session] = {}
         self.loaded: list[Session] = []
-        # Rows Ryan opened or closed himself. A project with a live session is open unless he
-        # closed it; everything else is open only if he opened it.
+        # Rows you opened or closed yourself. A project with a live session is open unless you
+        # closed it; everything else is open only if you opened it.
         self.open_nodes: set[tuple[str, str]] = set()
         self.closed_nodes: set[tuple[str, str]] = set()
         self.cursor_key: tuple[str, str] | None = None

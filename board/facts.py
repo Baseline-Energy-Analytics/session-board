@@ -40,7 +40,7 @@ WORKSPACES = CONFIG.workspaces
 # Sessions in throwaway folders under here are one project, "scratch".
 SCRATCH = CONFIG.scratch
 # A session resumed with `claude --bg --resume` and no prompt reports tempo "blocked" with this
-# detail. It is waiting for a first prompt, not for Ryan, so it counts as idle.
+# detail. It is waiting for a first prompt, not for you, so it counts as idle.
 IDLE_PLACEHOLDER = "(idle"
 
 # Order matters: the board sorts by it. "stale": a background job whose state.json says it needs
@@ -59,12 +59,12 @@ class Session:
     state: str                  # one of STATES
     last: float                 # epoch seconds of the last activity
     job: str | None = None      # short id for `claude attach`, for background sessions
-    asked: str | None = None    # the first prompt Ryan typed
+    asked: str | None = None    # the first prompt you typed
     summary: str | None = None  # Claude Code's own summary of a background session
     said: str | None = None     # the last thing Claude said, from the transcript
     stopped: bool = False       # a background session stopped with `claude stop`
     root: str | None = None     # uuid of the first message: the same for every copy of a conversation
-    waiting: str | None = None  # what it needs from Ryan, or last needed when stale; secrets masked
+    waiting: str | None = None  # what it needs from you, or last needed when stale; secrets masked
     was: str | None = None      # for a stale session, the state its state.json still claims
     model: str | None = None    # the model of its last reply, e.g. "claude-opus-5-5"
     context: int = 0            # tokens in the context window at its last reply
@@ -253,7 +253,7 @@ def load_transcripts(claude_dir: str = CLAUDE_DIR, cache_path: str = CACHE_PATH,
 
 
 def _write_private(path: str, data) -> None:
-    """Write atomically, readable by Ryan only: the cache holds transcript excerpts."""
+    """Write atomically, readable by you only: the cache holds transcript excerpts."""
     os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".tmp-")
     try:

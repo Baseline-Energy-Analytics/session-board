@@ -21,7 +21,7 @@ files it reads and how states are derived from them.
 - **Checks:** `.venv/bin/python -m pytest`, and for the mod `claude plugin validate mod/` and
   `claude plugin test mod/`.
 
-**In a copy with `.beads/` and `docs/homelab.md` (the original homelab copy):** read `docs/homelab.md`
-and `docs/CONTEXT.md` first. Issues are beads (`bd ready`, `bd show <id>`; see `AGENTS.md` and
+**If the copy has `.beads/` or more docs** (a working copy with its own notes): read whatever docs it
+has first. Issues are beads (`bd ready`, `bd show <id>`; see `AGENTS.md` and
 `bd prime`), with descriptive ids `sb-<topic>[-<detail>]` under the epic `sb-board-epic`; use `bd` for all
 task tracking, not TodoWrite or TaskCreate. Don't commit or push without being asked.

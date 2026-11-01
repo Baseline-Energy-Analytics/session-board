@@ -4,7 +4,7 @@
 // ~/.claude/settings.json), else ~/.local/bin/board.
 //
 // A band above the prompt: "◆ N other sessions need you: <titles>", and in a background session the
-// way back to the board, "Ctrl+Z: board". Nothing when no other session needs Ryan.
+// way back to the board, "Ctrl+Z: board". Nothing when no other session needs you.
 //
 // What it can't do (checked on Claude Code 2.1.316; details in the sb-board-mod bead):
 // - Redirect ←. It opens Agent View from the prompt's own key handling, not through a keybinding
@@ -28,7 +28,7 @@ const others = atom({ plugin: 'session-board', key: 'others' } as const, null, {
 type Row = { session_id: string; job: string | null; title: string; state: string }
 
 /**
- * The other sessions that need Ryan, or null when the board can't be read. The one place the band
+ * The other sessions that need you, or null when the board can't be read. The one place the band
  * gets its facts: `board --json` today; sb-tui-live will add a hooks-fed state folder to read instead.
  */
 async function readOthers($: EngineInterface): Promise<Others | null> {

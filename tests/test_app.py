@@ -202,7 +202,7 @@ def test_project_that_comes_alive_opens_unless_ryan_closed_it(tmp_path):
             await pilot.pause()
             assert any(r.startswith("shop") and not r.endswith("[open]") for r in labels(app))
             data[3] = Session("old-2", "shop question", "/home/x/shop", "/home/x/shop", "running", NOW)
-            await pilot.press("enter")  # Ryan closes plex, the first project
+            await pilot.press("enter")  # you close plex, the first project
             await pilot.press("r")
             await app.workers.wait_for_complete()
             await pilot.pause()
