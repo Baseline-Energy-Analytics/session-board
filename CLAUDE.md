@@ -6,7 +6,7 @@ files it reads and how states are derived from them.
 
 - **Layout:** `board/facts.py` (Claude Code's files → sessions and states), `board/app.py` (the Textual
   app), `board/actions.py` (the `claude` CLI), `board/config.py` (settings), `mod/` (the Claude Code
-  mod), `bin/cs` (numbered menu).
+  mod).
 - **No hard-coded paths or machine details.** Anything that differs between machines is a setting in
   `board/config.py` (config file plus `SESSION_BOARD_*` variables). Tests must not read the machine's
   own config or `~/.claude`; `tests/conftest.py` sees to the first.
@@ -18,8 +18,6 @@ files it reads and how states are derived from them.
   like a credential before it is shown or cached (`facts.mask_secrets`).
 - **Facts vs judgement:** facts (liveness, git, timing) come from code. Any model-made judgement is
   re-checked against fresh facts before it is shown.
-- **`bin/cs`** may be someone's SSH startup command: keep it working, and test with `cs --list` and
-  `cs --dry-run N`.
 - **Checks:** `.venv/bin/python -m pytest`, and for the mod `claude plugin validate mod/` and
   `claude plugin test mod/`.
 

@@ -32,7 +32,6 @@ git clone git@github.com:ryanckelly/session-board.git ~/session-board
 cd ~/session-board
 uv sync                                   # creates .venv with Textual
 ln -s ~/session-board/bin/board ~/.local/bin/board
-ln -s ~/session-board/bin/cs ~/.local/bin/cs        # optional, see "cs" below
 board                                     # or: board --list, board --json, board --help
 ```
 
@@ -102,12 +101,6 @@ It runs `~/.local/bin/board`. If the board is installed elsewhere, also set `"SE
 
 What a mod can't do (Claude Code 2.1.316): redirect ← to this board instead of Agent View, or end
 `claude attach`. Ctrl+Z is the direct way back.
-
-## cs: a numbered menu
-
-`bin/cs` lists the same sessions as a numbered menu: type a number to jump in. It suits a phone SSH app
-(as a host's startup command) where a full-screen board is awkward. `cs <text>` filters; `cs --list`
-prints the menu.
 
 ## Files the board writes
 
