@@ -202,6 +202,20 @@ fn c_toggles_the_metadata_strip() {
 }
 
 #[test]
+fn f_lists_every_file() {
+    let mut a = app();
+    assert!(!a.prefs.all_files);
+    let s = screen(&press(&mut a, 160, 60, ""));
+    assert!(s.contains("tests/test_auth.py") && s.contains("src/auth/ (3)") && s.contains("f all files"), "{s}");
+    assert!(!s.contains("src/auth/clock.py"));
+    let s = screen(&press(&mut a, 160, 60, "f"));
+    assert!(a.prefs.all_files);
+    assert!(s.contains("src/auth/clock.py") && s.contains("src/auth/refresh.py") && s.contains("f fewer"), "{s}");
+    press(&mut a, 160, 60, "f");
+    assert!(!a.prefs.all_files);
+}
+
+#[test]
 fn an_empty_needs_you_says_so() {
     let mut snap = sample();
     for s in &mut snap.sessions {

@@ -248,6 +248,7 @@ pub fn sources(tmp: &TempDir) -> Sources {
         days: 30,
         projects: Projects { workspaces: vec!["/home/u".into()], scratch: "/nonexistent-scratch".into() },
         claude: vec!["claude".into()],
+        git: false,
     }
 }
 

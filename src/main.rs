@@ -27,6 +27,7 @@ usage: board [--list | --json | --config | --dump]
          /              search, in Finder (ended sessions too)
          r              refresh;  q or Ctrl+C  quit
          ← →            Columns: between columns;  c  its metadata strip (remembered)
+         f              Columns: every file in the Files card, or the latest few (remembered)
          t              Timeline: 24 hours / 7 days
          Ctrl+K         Finder: actions menu, New session… too (letters are search
                         text there, so it also has Ctrl+S stop, Ctrl+X delete,
@@ -113,7 +114,9 @@ fn main() -> ExitCode {
             }
         };
     };
-    let snapshot = facts::collect(&Sources::from_config(&config), 1);
+    let mut sources = Sources::from_config(&config);
+    sources.git = mode == "--dump"; // --list and --json don't show it
+    let snapshot = facts::collect(&sources, 1);
     match mode {
         "--list" => print!("{}", report::list(&snapshot.sessions, facts::now(), &config.home, &config.scratch)),
         "--json" => println!("{}", report::json(&snapshot.sessions)),

@@ -97,4 +97,4 @@ Actions still run in the launch folder, where `claude --resume` finds the conver
 The Git card runs `git --no-optional-locks` (read-only: `status` doesn't refresh the index) with
 `rev-parse --show-toplevel --git-common-dir`, `status --porcelain=v2 --branch`, `log -1` and
 `worktree list --porcelain`. It never fetches. Ahead/behind are as of the last fetch, so the card shows
-`FETCH_HEAD`'s time beside them. Folders are read in parallel, each answer reused for 20 seconds.
+`FETCH_HEAD`'s time beside them. Folders are read in parallel, each answer reused for 20 seconds. Only the board, `--dump` and `--shot` read git; `--json` and `--list` (which the mod polls) don't.

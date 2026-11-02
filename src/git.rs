@@ -42,6 +42,9 @@ pub struct GitInfo {
     /// The last commit on HEAD: when, and its subject.
     pub commit_at: Option<i64>,
     pub commit: Option<String>,
+    /// Status wasn't read because the repository's own config names a program git could run
+    /// (this key); only `root` is set then.
+    pub refused: Option<String>,
 }
 
 impl GitInfo {
@@ -83,6 +86,27 @@ pub fn parse_status(out: &str, info: &mut GitInfo) {
     }
 }
 
+/// The first key in the repository's own config (local and worktree scopes, `git config --list
+/// --show-scope --null`) that names a program `git status` could run: a filter, an fsmonitor,
+/// an external diff. Your global and system config are trusted (git-lfs puts its filters there).
+pub fn risky_key(config: &str) -> Option<String> {
+    let mut fields = config.split('\0');
+    while let (Some(scope), Some(entry)) = (fields.next(), fields.next()) {
+        if !matches!(scope, "local" | "worktree") {
+            continue;
+        }
+        let (key, value) = entry.split_once('\n').unwrap_or((entry, ""));
+        let key = key.to_ascii_lowercase();
+        let filter = key.starts_with("filter.") && [".clean", ".smudge", ".process"].iter().any(|e| key.ends_with(e));
+        let textconv = key.starts_with("diff.") && key.ends_with(".textconv");
+        let fsmonitor = key == "core.fsmonitor" && !matches!(value.trim().to_ascii_lowercase().as_str(), "" | "false" | "no" | "off" | "0");
+        if filter || textconv || fsmonitor || key == "diff.external" {
+            return Some(key);
+        }
+    }
+    None
+}
+
 /// Read the git state of `cwd`; `None` when it isn't in a git working tree (or git is missing).
 pub fn read(cwd: &str) -> Option<GitInfo> {
     let dir = Path::new(cwd);
@@ -90,7 +114,10 @@ pub fn read(cwd: &str) -> Option<GitInfo> {
         return None;
     }
     let git = |args: &[&str]| -> Option<String> {
-        let mut argv = vec!["git".to_string(), "--no-optional-locks".to_string()];
+        // A repository's own config can name a program for git to run (`core.fsmonitor` runs
+        // one during `status`); none of these commands needs one, so it is turned off.
+        let mut argv: Vec<String> =
+            ["git", "--no-optional-locks", "-c", "core.fsmonitor=false"].iter().map(|a| a.to_string()).collect();
         argv.extend(args.iter().map(|a| a.to_string()));
         let out = proc::spawn(&argv, Some(dir), false, false).ok()?.wait(TIMEOUT).ok()?;
         (out.code == Some(0)).then_some(out.stdout)
@@ -99,7 +126,13 @@ pub fn read(cwd: &str) -> Option<GitInfo> {
     let mut lines = top.lines();
     let mut info = GitInfo { root: lines.next()?.to_string(), ..GitInfo::default() };
     let common = lines.next().map(|c| dir.join(c));
-    let status = git(&["status", "--porcelain=v2", "--branch", "--untracked-files=normal"])?;
+    // Listing config runs nothing; a repository whose own config could make status run a
+    // program isn't read further.
+    if let Some(key) = git(&["config", "--list", "--show-scope", "--null"]).as_deref().and_then(risky_key) {
+        info.refused = Some(key);
+        return Some(info);
+    }
+    let status = git(&["status", "--porcelain=v2", "--branch", "--untracked-files=normal", "--ignore-submodules=all"])?;
     parse_status(&status, &mut info);
     if let Some(log) = git(&["log", "-1", "--format=%ct%x1f%s"]) {
         let (at, subject) = log.trim_end().split_once('\x1f').unwrap_or(("", ""));
@@ -170,6 +203,17 @@ mod tests {
     }
 
     #[test]
+    fn programs_in_the_repository_config_are_refused() {
+        let list = |entries: &[(&str, &str)]| entries.iter().map(|(s, kv)| format!("{s}\0{kv}\0")).collect::<String>();
+        let lfs = list(&[("global", "filter.lfs.clean\ngit-lfs clean -- %f"), ("local", "core.bare\nfalse")]);
+        assert_eq!(risky_key(&lfs), None, "global filters are yours");
+        assert_eq!(risky_key(&list(&[("local", "core.fsmonitor\nfalse")])), None);
+        assert_eq!(risky_key(&list(&[("local", "filter.x.Clean\necho hi")])).as_deref(), Some("filter.x.clean"));
+        assert_eq!(risky_key(&list(&[("worktree", "core.fsmonitor\n./run.sh")])).as_deref(), Some("core.fsmonitor"));
+        assert_eq!(risky_key(&list(&[("local", "diff.external\nx")])).as_deref(), Some("diff.external"));
+    }
+
+    #[test]
     fn a_real_repository_is_read() {
         let tmp = std::env::temp_dir().join(format!("sb-git-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
@@ -194,7 +238,11 @@ mod tests {
         assert_eq!(g.branch.as_deref(), Some("main"));
         assert_eq!((g.modified, g.untracked, g.worktrees), (1, 1, 1));
         assert_eq!(g.commit.as_deref(), Some("First commit"));
-        assert!(g.upstream.is_none() && g.fetched.is_none());
+        assert!(g.upstream.is_none() && g.fetched.is_none() && g.refused.is_none());
+        run(&["config", "filter.x.clean", "touch ran"]);
+        let g = read(tmp.to_str().unwrap()).expect("a repo");
+        assert_eq!(g.refused.as_deref(), Some("filter.x.clean"));
+        assert!(!tmp.join("ran").exists());
         std::fs::remove_dir_all(&tmp).unwrap();
         assert!(read(tmp.to_str().unwrap()).is_none());
     }

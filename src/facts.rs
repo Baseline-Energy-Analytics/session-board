@@ -379,6 +379,9 @@ pub struct Sources {
     pub projects: Projects,
     /// The claude CLI, split into words.
     pub claude: Vec<String>,
+    /// Read each session's git state (the Git card). Off for `--json` and `--list`, which don't
+    /// show it: the mod runs `--json` every 30 seconds in every session.
+    pub git: bool,
 }
 
 impl Sources {
@@ -391,6 +394,7 @@ impl Sources {
             days: c.days,
             projects: Projects { workspaces: c.workspaces.clone(), scratch: c.scratch.clone() },
             claude: c.claude_argv(),
+            git: true,
         }
     }
 }
@@ -411,10 +415,7 @@ pub fn collect(src: &Sources, generation: u64) -> Snapshot {
     let deleted = store::load_deleted(&src.deleted_path);
     let agents = cli.finish(agents::TIMEOUT).unwrap_or_else(|| agents::from_files(&src.claude_dir));
     let mut sessions = build(src, &transcripts, &agents, &deleted);
-    let repos = git::read_all(sessions.iter().map(Session::folder));
-    for s in &mut sessions {
-        s.git = repos.get(s.folder()).cloned();
-    }
+    add_git(src, &mut sessions);
     Snapshot { now, generation, sessions }
 }
 
@@ -422,7 +423,20 @@ pub fn collect(src: &Sources, generation: u64) -> Snapshot {
 pub fn collect_with(src: &Sources, agents: &[Agent], now: f64) -> Vec<Session> {
     let transcripts = cache::load_transcripts(&src.claude_dir, &src.cache_path, src.days, now);
     let deleted = store::load_deleted(&src.deleted_path);
-    build(src, &transcripts, agents, &deleted)
+    let mut sessions = build(src, &transcripts, agents, &deleted);
+    add_git(src, &mut sessions);
+    sessions
+}
+
+/// Each session's git state, when `src.git` asks for it.
+fn add_git(src: &Sources, sessions: &mut [Session]) {
+    if !src.git {
+        return;
+    }
+    let repos = git::read_all(sessions.iter().map(Session::folder));
+    for s in sessions {
+        s.git = repos.get(s.folder()).cloned();
+    }
 }
 
 /// Rows from transcripts (newest first), agents and the deleted list.

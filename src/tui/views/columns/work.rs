@@ -63,17 +63,21 @@ pub fn read_summary(files: &[&FileTouch], folder: &str, home: &str) -> String {
         .join(" · ")
 }
 
-/// The Files card; returns the row after it (`y` when the session touched no files).
+/// The Files card; returns the row after it (`y` when the session touched no files). Shows the
+/// latest few changed files and the read ones folded by folder, or with `f` (`all_files`) every
+/// file, one per line.
 pub(super) fn files_card(buf: &mut Buffer, cx: &Ctx, x: u16, y: u16, w: u16, s: &Session) -> u16 {
     if s.files.is_empty() {
         return y;
     }
     let t = cx.theme;
+    let all = cx.prefs.all_files;
     let folder = s.folder();
     let (changed, read): (Vec<&FileTouch>, Vec<&FileTouch>) = s.files.iter().partition(|f| f.changed());
     let inner = usize::from(w.saturating_sub(6)).max(16);
     let mut body: Vec<Vec<Span>> = Vec::new();
-    for f in changed.iter().take(SHOWN) {
+    let shown = if all { changed.len() } else { SHOWN };
+    for f in changed.iter().take(shown) {
         let (glyph, color) = if f.created {
             ("+", t.ok)
         } else if f.edits > 0 {
@@ -92,21 +96,25 @@ pub(super) fn files_card(buf: &mut Buffer, cx: &Ctx, x: u16, y: u16, w: u16, s: 
             right.push(Span::styled(format!("−{}", f.removed), fg(t.error)));
         }
         right.push(Span::styled(format!("{:>5}", ago(f.last as f64, cx.now)), fg(t.dim)));
-        let rw = spans_width(&right);
-        let room = inner.saturating_sub(rw + 4).max(6);
-        let path = tail(&rel_path(&f.path, folder, cx.home), room);
-        let gap = inner.saturating_sub(2 + width(&path) + rw).max(1);
-        let mut line = vec![Span::styled(format!("{glyph} "), fg(color)), Span::styled(path, fg(t.fg)), Span::raw(" ".repeat(gap))];
-        line.extend(right);
-        body.push(line);
+        body.push(file_line(cx, inner, Span::styled(format!("{glyph} "), fg(color)), &rel_path(&f.path, folder, cx.home), right));
     }
-    if changed.len() > SHOWN {
-        body.push(vec![Span::styled(format!("… {} more changed", changed.len() - SHOWN), fg(t.dim))]);
+    if changed.len() > shown {
+        body.push(vec![Span::styled(format!("… {} more changed", changed.len() - shown), fg(t.dim))]);
     }
     if !read.is_empty() {
-        let label = "read  ";
-        let summary = trunc(&read_summary(&read, folder, cx.home), inner.saturating_sub(label.len()));
-        body.push(vec![Span::styled(label, fg(t.faint)), Span::styled(summary, fg(t.dim))]);
+        if all {
+            if !changed.is_empty() {
+                body.push(Vec::new());
+            }
+            for f in &read {
+                let right = vec![Span::styled(format!("{:>5}", ago(f.last as f64, cx.now)), fg(t.dim))];
+                body.push(file_line(cx, inner, Span::styled("· ", fg(t.faint)), &rel_path(&f.path, folder, cx.home), right));
+            }
+        } else {
+            let label = "read  ";
+            let summary = trunc(&read_summary(&read, folder, cx.home), inner.saturating_sub(label.len()));
+            body.push(vec![Span::styled(label, fg(t.faint)), Span::styled(summary, fg(t.dim))]);
+        }
     }
     let mut title = vec![Span::raw(" "), Span::styled("Files", t.bold(t.bright))];
     let mut counts = Vec::new();
@@ -118,7 +126,23 @@ pub(super) fn files_card(buf: &mut Buffer, cx: &Ctx, x: u16, y: u16, w: u16, s: 
         counts.push(format!("{} read", read.len()));
     }
     title.push(Span::styled(format!(" · {} ", counts.join(" · ")), fg(t.dim)));
+    let folded = changed.len() > SHOWN || !read.is_empty();
+    if all || folded {
+        title.extend([Span::styled("· ", fg(t.faint)), Span::styled("f", t.bold(t.bright))]);
+        title.push(Span::styled(if all { " fewer " } else { " all files " }, fg(t.dim)));
+    }
     boxed(buf, x, y, w, t.border, t.bg, Line::from(title), &body)
+}
+
+/// One file row: a glyph, the path (cut from the front to fit) and right-aligned `right`.
+fn file_line<'a>(cx: &Ctx, inner: usize, glyph: Span<'a>, path: &str, right: Vec<Span<'a>>) -> Vec<Span<'a>> {
+    let t = cx.theme;
+    let rw = spans_width(&right);
+    let path = tail(path, inner.saturating_sub(rw + 4).max(6));
+    let gap = inner.saturating_sub(2 + width(&path) + rw).max(1);
+    let mut line = vec![glyph, Span::styled(path, fg(t.fg)), Span::raw(" ".repeat(gap))];
+    line.extend(right);
+    line
 }
 
 /// The Git card; returns the row after it (`y` when the folder isn't in a git repository).
@@ -129,6 +153,12 @@ pub(super) fn git_card(buf: &mut Buffer, cx: &Ctx, x: u16, y: u16, w: u16, s: &S
     let dim = |v: String| Span::styled(v, fg(t.dim));
     let dot = || Span::styled("  ·  ", fg(t.faint));
     let mut body: Vec<Vec<Span>> = Vec::new();
+    if let Some(key) = &g.refused {
+        body.push(vec![dim(trunc(&format!("Not read: this repository's own config sets {key},"), inner))]);
+        body.push(vec![dim("which git status could run.".into())]);
+        let title = Line::from(vec![Span::raw(" "), Span::styled("Git", t.bold(t.bright)), Span::raw(" ")]);
+        return boxed(buf, x, y, w, t.border, t.bg, title, &body);
+    }
 
     // Upstream: ahead / behind, as of the last fetch.
     let mut line = Vec::new();

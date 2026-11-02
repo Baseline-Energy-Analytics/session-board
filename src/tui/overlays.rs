@@ -188,6 +188,7 @@ const HELP: &[(&str, &str)] = &[
     ("r  q", "refresh, quit"),
     ("← →", "Columns: between columns; Enter on a project moves into it"),
     ("c", "Columns: the metadata strip (remembered)"),
+    ("f", "Columns: every file in the Files card (remembered)"),
     ("t  1  7", "Timeline: toggle 24 hours / 7 days, or pick one"),
     ("#", "Finder (letters are search text)"),
     ("↑ ↓  Ctrl+P Ctrl+N", "move (PgUp PgDn, Home End too)"),

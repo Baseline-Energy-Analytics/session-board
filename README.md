@@ -64,6 +64,7 @@ Make sure `~/.local/bin` is on your `PATH`. To update, `git pull` and run the `c
 | Esc | Close a dialog, clear the search, or go back. Never quits. |
 | F1 (or `?` outside Finder) | Help. |
 | ← → and `c` | Columns: move between columns; show or hide the metadata strip. |
+| `f` | Columns: the Files card lists every file, or only the latest few. Remembered. |
 | `t` | Timeline: 24 hours / 7 days. |
 | Ctrl+K, Ctrl+S, Ctrl+X, Ctrl+E | Finder, where letters are search text: menu, stop, delete, ended. |
 
@@ -136,7 +137,7 @@ What a mod can't do (Claude Code 2.1.316): redirect ← to this board instead of
 - `~/.cache/session-board/transcripts-rs.json`: parsed transcripts, cached by size and mtime, readable
   by you only. It holds excerpts (first prompt, last reply), with anything that looks like a credential
   in a pending command masked. Safe to delete.
-- `~/.local/state/session-board/prefs.json`: the `e` and `c` choices.
+- `~/.local/state/session-board/prefs.json`: the `e`, `c` and `f` choices.
 - `~/.local/state/session-board/deleted.json`: conversations deleted with `x`. `claude rm` deletes the
   background session but keeps its transcript, which would otherwise come back as an ended row. Entries
   expire after the `days` setting.

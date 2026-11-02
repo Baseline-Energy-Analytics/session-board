@@ -734,3 +734,19 @@ fn a_cd_elsewhere_does_not_move_a_session_to_another_project() {
     assert_eq!(got["s2"].project, s(&repo));
     assert_eq!(got["s3"].project, s(&home));
 }
+
+#[test]
+fn git_is_read_only_when_asked_for() {
+    let tmp = TempDir::new();
+    let repo = tmp.join("home/app");
+    std::fs::create_dir_all(&repo).unwrap();
+    let ok = std::process::Command::new("git").args(["init", "-q", "-b", "main"]).current_dir(&repo).status().unwrap();
+    assert!(ok.success());
+    transcript("s1", &repo.to_string_lossy()).write(&tmp.join("claude"));
+    let mut src = sources(&tmp);
+    let read = |src: &board::facts::Sources| board::facts::collect_with(src, &[], NOW).remove(0);
+    assert_eq!(read(&src).git, None, "off: --json and --list");
+    src.git = true;
+    let g = read(&src).git.expect("on: the board, --dump, --shot");
+    assert_eq!(g.branch.as_deref(), Some("main"));
+}

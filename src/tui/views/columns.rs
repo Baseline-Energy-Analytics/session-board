@@ -456,6 +456,7 @@ impl View for Columns {
                 }
             }
             KeyCode::Char('c') => return Some(Action::ToggleColumns),
+            KeyCode::Char('f') => return Some(Action::ToggleFiles),
             _ => return None,
         }
         Some(Action::Handled)

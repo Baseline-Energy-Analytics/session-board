@@ -171,6 +171,8 @@ pub enum Action {
     ToggleEnded,
     /// `c` in Columns: its metadata strip (remembered).
     ToggleColumns,
+    /// `f` in Columns: every file in the Files card, or the latest few (remembered).
+    ToggleFiles,
     SwitchView(Switch),
     /// Esc with nothing else to do: the previous view.
     Back,
@@ -671,6 +673,10 @@ impl App {
             }
             Action::ToggleColumns => {
                 self.prefs.show_columns = !self.prefs.show_columns;
+                self.save_prefs();
+            }
+            Action::ToggleFiles => {
+                self.prefs.all_files = !self.prefs.all_files;
                 self.save_prefs();
             }
             Action::SwitchView(to) => {

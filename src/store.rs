@@ -88,11 +88,13 @@ pub struct Prefs {
     pub show_ended: bool,
     /// Columns' metadata strip (shown at first).
     pub show_columns: bool,
+    /// Columns' Files card lists every file, not the latest few (off at first).
+    pub all_files: bool,
 }
 
 impl Default for Prefs {
     fn default() -> Self {
-        Prefs { show_ended: false, show_columns: true }
+        Prefs { show_ended: false, show_columns: true, all_files: false }
     }
 }
 
@@ -101,6 +103,7 @@ pub fn load_prefs(path: &Path) -> Prefs {
     Prefs {
         show_ended: crate::claude::truthy(m.get("show_ended")),
         show_columns: m.get("show_columns") != Some(&Value::Bool(false)),
+        all_files: crate::claude::truthy(m.get("all_files")),
     }
 }
 
@@ -110,5 +113,6 @@ pub fn save_prefs(prefs: Prefs, path: &Path) {
     let mut m = read_object(path).unwrap_or_default();
     m.insert("show_ended".into(), prefs.show_ended.into());
     m.insert("show_columns".into(), prefs.show_columns.into());
+    m.insert("all_files".into(), prefs.all_files.into());
     let _ = write_private(path, &m);
 }
