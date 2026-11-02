@@ -257,7 +257,12 @@ fn the_form_refuses_in_words_and_esc_cancels() {
     press(&mut a, "down");
     type_text(&mut a, "probe");
     let buf = press(&mut a, "enter");
-    assert!(screen(&buf).contains(&format!("There's no folder {}/no-such-folder.", home.str())), "{}", screen(&buf));
+    // A long temp folder (macOS, Windows) wraps the message, even inside the path: rejoin the
+    // error's lines before reading it.
+    let shown = screen(&buf);
+    let error: String = shown.lines().filter_map(|l| l.split_once("✗ ")).map(|(_, rest)| rest.split('│').next().unwrap_or("").trim()).collect();
+    assert!(error.starts_with("There's no folder"), "{shown}");
+    assert!(error.ends_with(&format!("{}/no-such-folder.", home.str())), "{error}\n{shown}");
     press(&mut a, "esc");
     assert!(a.overlay.is_none());
     assert!(a.take_effects().is_empty());

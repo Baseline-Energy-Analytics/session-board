@@ -296,7 +296,8 @@ fn draw_confirm(buf: &mut Buffer, area: Rect, t: &Theme, c: &Confirm) {
 fn draw_form(buf: &mut Buffer, area: Rect, t: &Theme, f: &NewForm) {
     let w = 78u16.min(area.width.saturating_sub(4));
     let iw = w.saturating_sub(6);
-    let error = f.error.as_deref().map(|e| wrap(e, usize::from(iw).max(1))).unwrap_or_default();
+    // Each line is drawn after "✗ ", so it wraps two cells narrower.
+    let error = f.error.as_deref().map(|e| wrap(e, usize::from(iw.saturating_sub(2)).max(1))).unwrap_or_default();
     let error_h = error.len().min(3) as u16;
     // Three label+field pairs with gaps, the command, the error, the buttons.
     let h = 1 + 3 * 3 + 2 + error_h + u16::from(error_h > 0) + 2 + 2;
