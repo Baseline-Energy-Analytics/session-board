@@ -14,6 +14,10 @@ node_modules/
 .beads-credential-key
 .beads/proxieddb/
 
-# Python
-.venv/
+# Python (prototype/ scripts only)
 __pycache__/
+
+# Rust
+target/
+# Test fixtures are made-up data, unlike the transcript-derived *.json above
+!tests/fixtures/**/*.json

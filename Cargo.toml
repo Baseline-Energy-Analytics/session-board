@@ -1,0 +1,22 @@
+[package]
+name = "board"
+version = "0.1.0"
+edition = "2024"
+description = "A terminal board for every Claude Code session on a machine"
+license = "MIT"
+repository = "https://github.com/ryanckelly/session-board"
+publish = false
+
+[dependencies]
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
+libc = "0.2.191"
+nucleo-matcher = "0.3"
+ratatui = "0.30.2"
+regex = "1.13.1"
+serde = { version = "1.0.229", features = ["derive"] }
+# preserve_order: describe_tool takes "the first string argument", as written in the transcript.
+serde_json = { version = "1.0.154", features = ["preserve_order"] }
+shlex = "2.0.1"
+toml = "0.9"
+unicode-width = "0.2.3"
+wait-timeout = "0.2"

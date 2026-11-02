@@ -5,35 +5,43 @@ View. It shows background sessions (`claude --bg`), sessions open in other termi
 days of ended conversations, grouped by project, with what each one is doing and what it needs from you.
 Enter jumps into a session (`claude attach`); **Ctrl+Z** inside it comes back to the board.
 
-```
-▼ api  ~/work/api    1 needs you  ·  1 idle  ·  5m
-├─ ◆ Fix the flaky auth test — Reply yes to commit the fix          needs you · 5m     182k ctx  Opus 5.5     31k out
-└─ ■ Upgrade the ORM                                                idle · 2d           64k ctx  Sonnet 4.5   12k out
-▼ infra  ~/work/infra    1 running  ·  1 not running  ·  now
-├─ ● Terraform plan for the new queue                               running · now       22k ctx  Opus 5.5      4k out
-└─ ◇ Rotate the staging certs — rate limited, wait and retry        not running · 3d    90k ctx  Opus 5.5     20k out
-```
+![Columns view](docs/shots/columns-tool-call-160x45.svg)
 
 It reads Claude Code's own files and its CLI, and every action goes through the `claude` CLI. Nothing
-leaves the machine.
+leaves the machine. Written in Rust with [Ratatui](https://ratatui.rs).
+
+## Three views
+
+Tab (and Shift+Tab) cycles them.
+
+- **Columns** (the default): projects → sessions → the conversation. A pinned "Needs you" entry gathers
+  every session waiting on you; the conversation column shows your ask, Claude's reply, and what it is
+  waiting on, with a pending tool call split into the tool and its command.
+- **Timeline**: each session's activity on a 24-hour or 7-day axis (`t` switches), with a marker where a
+  session started waiting on you and how long it has waited.
+  ![Timeline view](docs/shots/timeline-24h.svg)
+- **Finder**: type to fuzzy-search titles, projects and folders (ended sessions too), with a preview.
+  `/` opens it from the other views; Ctrl+K opens an action menu that shows the exact `claude` command.
+  ![Finder view](docs/shots/finder-2-query-infra.svg)
 
 ## Requirements
 
 - Claude Code with background sessions (`claude --bg`, `claude attach`, `claude agents`). Checked on
   2.1.316. The board reads files Claude Code doesn't document, so a Claude Code update can break it;
   `docs/data-sources.md` lists what it reads.
-- Python 3.12+ and [uv](https://docs.astral.sh/uv/).
 - Linux or macOS. On Linux, liveness checks also compare process start times, which macOS can't.
+- To build: Rust (stable) via [rustup](https://rustup.rs).
 
 ## Install
 
 ```bash
 git clone https://github.com/ryanckelly/session-board.git ~/session-board
 cd ~/session-board
-uv sync                                   # creates .venv with Textual
-ln -s ~/session-board/bin/board ~/.local/bin/board
-board                                     # or: board --list, board --json, board --help
+cargo install --path . --root ~/.local     # installs ~/.local/bin/board
+board                                      # or: board --list, board --json, board --help
 ```
+
+Make sure `~/.local/bin` is on your `PATH`. To update, `git pull` and run the `cargo install` line again.
 
 ## Keys
 
@@ -41,13 +49,17 @@ board                                     # or: board --list, board --json, boar
 |---|---|
 | Enter | Jump into the session. An ended one is resumed in the background first. |
 | Ctrl+Z (inside a session) | Back to the board. ← then Esc also works, through Agent View. |
-| → ← | Open and close rows. An open session shows what was asked, its status, model and tokens. |
-| `n` | New background session: folder, optional name, optional first prompt. |
+| Tab / Shift+Tab | Next / previous view. |
+| `n` | New background session: folder, optional name, optional first prompt; then jump in. |
 | `s` / `x` | Stop / delete a background session. Delete asks first. |
-| `/` | Filter by name, folder or project, including ended sessions. Esc clears. |
 | `e` | Show or hide ended sessions. Hidden at first; remembered. |
-| `c` | Show or hide the context, model and token columns. Remembered. |
-| `r` / `q` | Refresh / quit. |
+| `/` | Search, in Finder. |
+| `r` / `q` | Refresh / quit (Ctrl+C quits too). |
+| Esc | Close a dialog, clear the search, or go back. Never quits. |
+| F1 (or `?` outside Finder) | Help. |
+| ← → and `c` | Columns: move between columns; show or hide the metadata strip. |
+| `t` | Timeline: 24 hours / 7 days. |
+| Ctrl+K, Ctrl+S, Ctrl+X, Ctrl+E | Finder, where letters are search text: menu, stop, delete, ended. |
 
 ## States
 
@@ -71,7 +83,7 @@ workspaces = ["~", "~/work"]
 scratch = "/tmp"        # throwaway sessions under here are one "scratch" project
 days = 30               # how far back ended sessions go; match Claude Code's cleanupPeriodDays
 poll = 10               # seconds between refreshes
-claude = "claude"       # the claude CLI, if it isn't on PATH as "claude"
+claude = "claude"       # the claude CLI, if it isn't on PATH as "claude" (may include arguments)
 ```
 
 Each setting can also come from an environment variable, which wins over the file:
@@ -79,6 +91,9 @@ Each setting can also come from an environment variable, which wins over the fil
 `SESSION_BOARD_POLL` and `SESSION_BOARD_CLAUDE`. `SESSION_BOARD_CONFIG` points at another config file.
 Claude Code's folder follows `CLAUDE_CONFIG_DIR`, as Claude Code does. The cache and the board's own
 state follow `XDG_CACHE_HOME` and `XDG_STATE_HOME`.
+
+Colours are true colour, falling back to 256 colours when `COLORTERM` isn't `truecolor` or `24bit`.
+Under tmux, which often hides `COLORTERM`, set `SESSION_BOARD_COLOR=truecolor` (or `256`).
 
 `board --config` prints the settings in effect and where each came from.
 
@@ -104,9 +119,9 @@ What a mod can't do (Claude Code 2.1.316): redirect ← to this board instead of
 
 ## Files the board writes
 
-- `~/.cache/session-board/transcripts.json`: parsed transcripts, cached by size and mtime, readable by
-  you only. It holds excerpts (first prompt, last reply), with anything that looks like a credential in a
-  pending command masked. Safe to delete.
+- `~/.cache/session-board/transcripts-rs.json`: parsed transcripts, cached by size and mtime, readable
+  by you only. It holds excerpts (first prompt, last reply), with anything that looks like a credential
+  in a pending command masked. Safe to delete.
 - `~/.local/state/session-board/prefs.json`: the `e` and `c` choices.
 - `~/.local/state/session-board/deleted.json`: conversations deleted with `x`. `claude rm` deletes the
   background session but keeps its transcript, which would otherwise come back as an ended row. Entries
@@ -115,13 +130,21 @@ What a mod can't do (Claude Code 2.1.316): redirect ← to this board instead of
 ## Development
 
 ```bash
-.venv/bin/python -m pytest          # the board
+cargo test                          # the board: facts, actions, config, views
+cargo clippy --all-targets
 claude plugin test mod/             # the mod
+board --shot out.svg --size 160x45 --view columns --data tests/fixtures/sample.json --home /home/u
 ```
 
-`board/facts.py` turns Claude Code's files into sessions and states; `board/app.py` is the Textual app;
-`board/actions.py` wraps the `claude` CLI; `board/config.py` reads the settings. The tests never read the
-machine's own config or Claude Code folder.
+- `src/facts.rs` and `src/claude/` turn Claude Code's files into sessions and states.
+- `src/actions.rs` holds the rules for each action and wraps the `claude` CLI.
+- `src/config.rs` reads the settings.
+- `src/tui/` is the app: `app.rs` routes keys and runs actions, `views/` holds the three views (see
+  `src/tui/views/README.md`), `widgets.rs` and `theme.rs` are shared by all of them.
+- `board --shot` draws one frame as an SVG through the real app; the screenshots in `docs/shots/` come
+  from it, using the made-up sessions in `tests/fixtures/`.
+
+The tests never read the machine's own config or Claude Code folder.
 
 ## License
 
