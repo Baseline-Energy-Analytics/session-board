@@ -408,36 +408,138 @@ pub fn scrollbar(buf: &mut Buffer, t: &Theme, r: Rect, content: usize, view: usi
     }
 }
 
-/// A chat bubble: a label line, then `text` wrapped in a soft-edged block of `bg`, at most 72%
-/// of `avail` wide; right-aligned for you, left for Claude. Returns the row after it (with a
-/// blank row of spacing).
+/// A chat bubble: a label line, then `text` wrapped in a soft-edged block of `bg`, at most 80% of
+/// `avail` wide, on the left like everything else in a column. Light Markdown in the text
+/// (`**bold**`, `` `code` ``, `# heading`) is drawn as style rather than shown as raw markers.
+/// Returns the row after it (with a blank row of spacing).
 #[allow(clippy::too_many_arguments)]
-pub fn bubble(
-    buf: &mut Buffer,
-    t: &Theme,
-    x: u16,
-    y: u16,
-    avail: u16,
-    text: &str,
-    right: bool,
-    bg: Color,
-    label: &[Span],
-) -> u16 {
-    let maxw = (usize::from(avail) * 72 / 100).max(12);
-    let lines = wrap(text, maxw.saturating_sub(4));
-    let inner = lines.iter().map(|l| l.width()).max().unwrap_or(0).max(spans_width(label));
+pub fn bubble(buf: &mut Buffer, t: &Theme, x: u16, y: u16, avail: u16, text: &str, bg: Color, label: &[Span]) -> u16 {
+    let maxw = (usize::from(avail) * 80 / 100).max(12);
+    let lines = md_wrap(text, maxw.saturating_sub(4));
+    let line_w = |l: &[(String, Mark)]| l.iter().map(|(s, _)| s.width()).sum::<usize>();
+    let inner = lines.iter().map(|l| line_w(l)).max().unwrap_or(0).max(spans_width(label));
     let bw = ((inner + 4) as u16).min(avail);
-    let bx = if right { x + avail - bw } else { x };
-    let lw = spans_width(label) as u16;
-    put(buf, if right { (x + avail).saturating_sub(lw + 1) } else { bx + 1 }, y, label, avail);
+    put(buf, x + 1, y, label, avail);
     let n = lines.len() as u16;
-    caps(buf, bx, y + 1, y + 2 + n, bw, bg, t.bg);
+    caps(buf, x, y + 1, y + 2 + n, bw, bg, t.bg);
     for (k, l) in lines.iter().enumerate() {
         let yy = y + 2 + k as u16;
-        fill(buf, Rect::new(bx, yy, bw, 1), Style::new().bg(bg));
-        put_str(buf, bx + 2, yy, l, fg(t.fg).bg(bg), bw.saturating_sub(2));
+        fill(buf, Rect::new(x, yy, bw, 1), Style::new().bg(bg));
+        let spans: Vec<Span> = l
+            .iter()
+            .map(|(s, m)| {
+                let style = match m {
+                    Mark::Plain => fg(t.fg),
+                    Mark::Bold => t.bold(t.bright),
+                    Mark::Code => fg(t.code),
+                };
+                Span::styled(s.clone(), style.bg(bg))
+            })
+            .collect();
+        put(buf, x + 2, yy, &spans, bw.saturating_sub(2));
     }
     y + 4 + n
+}
+
+/// How a run of bubble text is drawn.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Mark {
+    Plain,
+    Bold,
+    Code,
+}
+
+/// Wrap `text` to `w` columns like [`wrap`], reading light Markdown on the way: `**bold**` and
+/// `` `code` `` (the markers are dropped, and may span words) and `#` headings (bold). Anything
+/// else, lists included, stays as written.
+pub fn md_wrap(text: &str, w: usize) -> Vec<Vec<(String, Mark)>> {
+    let w = w.max(1);
+    let mut out: Vec<Vec<(String, Mark)>> = Vec::new();
+    let (mut bold, mut code) = (false, false);
+    for para in text.split('\n') {
+        // A heading is bold throughout, without its #s.
+        let trimmed = para.trim_start();
+        let heading = trimmed.starts_with('#') && trimmed.trim_start_matches('#').starts_with(' ');
+        let para = if heading { trimmed.trim_start_matches('#').trim_start() } else { para };
+
+        // Words, each a list of styled pieces, with marker state carried across words.
+        let mut words: Vec<Vec<(String, Mark)>> = Vec::new();
+        for raw in para.split_whitespace() {
+            let mut pieces: Vec<(String, Mark)> = Vec::new();
+            let mut cur = String::new();
+            let mark = |bold: bool, code: bool| if code { Mark::Code } else if bold || heading { Mark::Bold } else { Mark::Plain };
+            let mut chars = raw.chars().peekable();
+            while let Some(c) = chars.next() {
+                let toggle = if c == '`' {
+                    Some(false)
+                } else if c == '*' && !code && chars.peek() == Some(&'*') {
+                    chars.next();
+                    Some(true)
+                } else {
+                    None
+                };
+                match toggle {
+                    Some(is_bold) => {
+                        if !cur.is_empty() {
+                            pieces.push((std::mem::take(&mut cur), mark(bold, code)));
+                        }
+                        if is_bold { bold = !bold } else { code = !code }
+                    }
+                    None => cur.push(c),
+                }
+            }
+            if !cur.is_empty() {
+                pieces.push((cur, mark(bold, code)));
+            }
+            if !pieces.is_empty() {
+                words.push(pieces);
+            }
+        }
+        // Markers don't carry across paragraphs: an unclosed one ends with its line.
+        bold = false;
+        code = false;
+
+        let mut line: Vec<(String, Mark)> = Vec::new();
+        let mut lw = 0;
+        for word in words {
+            let ww: usize = word.iter().map(|(s, _)| s.width()).sum();
+            if lw > 0 && lw + 1 + ww <= w {
+                line.push((" ".into(), Mark::Plain));
+                line.extend(word);
+                lw += 1 + ww;
+                continue;
+            }
+            if lw > 0 {
+                out.push(std::mem::take(&mut line));
+                lw = 0;
+            }
+            if ww <= w {
+                line.extend(word);
+                lw = ww;
+                continue;
+            }
+            // Longer than a line: break it by characters.
+            for (piece, m) in word {
+                for c in piece.chars() {
+                    let cw = char_width(c);
+                    if lw + cw > w && lw > 0 {
+                        out.push(std::mem::take(&mut line));
+                        lw = 0;
+                    }
+                    match line.last_mut() {
+                        Some((s, lm)) if *lm == m => s.push(c),
+                        _ => line.push((c.to_string(), m)),
+                    }
+                    lw += cw;
+                }
+            }
+        }
+        out.push(line);
+    }
+    while out.last().is_some_and(|l| l.is_empty()) {
+        out.pop();
+    }
+    out
 }
 
 // --- text input ----------------------------------------------------------------------------------
@@ -577,6 +679,35 @@ impl LineEdit {
 
 #[cfg(test)]
 mod tests {
+    fn md(text: &str, w: usize) -> Vec<Vec<(&'static str, Mark)>> {
+        md_wrap(text, w)
+            .into_iter()
+            .map(|l| l.into_iter().map(|(s, m)| (&*Box::leak(s.into_boxed_str()), m)).collect())
+            .collect()
+    }
+
+    #[test]
+    fn md_wrap_draws_bold_and_code_without_markers() {
+        let l = md("say **two words** and `ls -la` ok", 80);
+        assert_eq!(l.len(), 1);
+        let text: String = l[0].iter().map(|(s, _)| *s).collect();
+        assert_eq!(text, "say two words and ls -la ok");
+        assert!(l[0].contains(&("two", Mark::Bold)) && l[0].contains(&("words", Mark::Bold)));
+        assert!(l[0].contains(&("ls", Mark::Code)) && l[0].contains(&("-la", Mark::Code)));
+        assert!(l[0].contains(&("say", Mark::Plain)));
+    }
+
+    #[test]
+    fn md_wrap_headings_wrapping_and_unclosed_markers() {
+        let l = md("## Done\n**open bold\nnext line", 80);
+        assert_eq!(l[0], vec![("Done", Mark::Bold)]);
+        assert!(l[1].iter().all(|(_, m)| *m == Mark::Bold || *m == Mark::Plain));
+        assert_eq!(l[2], vec![("next", Mark::Plain), (" ", Mark::Plain), ("line", Mark::Plain)]);
+        let narrow = md("one two three four", 9);
+        assert_eq!(narrow.len(), 3); // "one two" · "three" · "four"
+        assert!(md("a * b ** c", 80)[0].iter().map(|(s, _)| *s).collect::<String>().contains("a * b"));
+    }
+
     use super::*;
 
     fn key(code: KeyCode) -> KeyEvent {

@@ -88,6 +88,11 @@ pub struct Session {
     /// The first prompt you typed.
     #[serde(default)]
     pub asked: Option<String>,
+    /// The latest prompt you typed, and how many you typed in all. Never in `--json`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_asked: Option<String>,
+    #[serde(default)]
+    pub prompts: u32,
     /// Claude Code's own summary of a background session.
     #[serde(default)]
     pub summary: Option<String>,
@@ -141,6 +146,8 @@ impl Session {
             last,
             job: None,
             asked: None,
+            last_asked: None,
+            prompts: 0,
             summary: None,
             said: None,
             stopped: false,
@@ -392,7 +399,9 @@ fn build(src: &Sources, transcripts: &[(String, TranscriptInfo)], agents: &[Agen
         let title = pick([&a.name, &st.name, &t.custom, &t.ai]).unwrap_or_else(|| t.first_line());
         let mut s = row(&sid, title, cwd, state, t.last.max(st.updated_at), t, &mut projects);
         s.job = Some(job.clone());
-        s.summary = st.summary();
+        // While a turn starts, Claude Code's status is often just the prompt it was given: that's
+        // not a summary, and the prompt is shown already.
+        s.summary = st.summary().filter(|m| !echoes(m, s.last_asked.as_deref()));
         s.stopped = stopped;
         s.waiting = waiting;
         s.waiting_since = waiting_since;
@@ -465,6 +474,8 @@ fn row(sid: &str, title: String, cwd: String, state: State, last: f64, t: &Trans
     let project = projects.project_of(&cwd);
     Session {
         asked: t.asked.clone(),
+        last_asked: t.last_asked.clone(),
+        prompts: t.typed,
         said: t.said.clone(),
         root: t.root.clone(),
         model: t.model.clone(),
@@ -473,6 +484,15 @@ fn row(sid: &str, title: String, cwd: String, state: State, last: f64, t: &Trans
         spans: t.spans.clone(),
         ..Session::new(sid, &title, &cwd, &project, state, last)
     }
+}
+
+/// Whether `status` only repeats `prompt` (possibly cut short, with or without an ellipsis).
+fn echoes(status: &str, prompt: Option<&str>) -> bool {
+    let Some(prompt) = prompt else { return false };
+    let norm = |t: &str| t.split_whitespace().collect::<Vec<_>>().join(" ");
+    let (status, prompt) = (norm(status), norm(prompt));
+    let status = status.trim_end_matches(['…', '.']).trim_end();
+    !status.is_empty() && (prompt.starts_with(status) || status.starts_with(prompt.as_str()))
 }
 
 /// The first value that is set.

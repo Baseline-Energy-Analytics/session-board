@@ -663,13 +663,13 @@ fn conversation(buf: &mut Buffer, x: u16, y: u16, w: u16, bottom: u16, cx: &Ctx,
         hline(buf, x + 13, y, w.saturating_sub(13), "─", fg(t.sep));
         y += 2;
     }
-    let width = (usize::from(w) * 72 / 100).max(12).saturating_sub(4);
-    let asked = sn.asked.as_deref().map(str::trim).filter(|a| !a.is_empty());
+    let width = (usize::from(w) * 80 / 100).max(12).saturating_sub(4);
+    let asked = sn.last_asked.as_deref().or(sn.asked.as_deref()).map(str::trim).filter(|a| !a.is_empty());
     let said = sn.said.as_deref().map(str::trim).filter(|a| !a.is_empty());
     let reply = said.or(if sn.state == St::Running { None } else { sn.summary.as_deref() });
     let reply_is_summary = said.is_none() && reply.is_some();
     let avail = bottom.saturating_sub(y + reserved) as usize;
-    let lines = |text: &str| wrap(text, width).len();
+    let lines = |text: &str| widgets::md_wrap(text, width).len();
     // A bubble takes its lines plus three (label, two caps), and a gap after when there's room.
     // When both don't fit, Claude's reply wins: it's what you'd answer.
     let mut asked_n = 0;
@@ -687,13 +687,14 @@ fn conversation(buf: &mut Buffer, x: u16, y: u16, w: u16, bottom: u16, cx: &Ctx,
         _ => 0,
     };
 
-    let you = [s("you", t.bold(t.accent))];
+    let latest = if sn.prompts > 1 { format!(" · latest of {}", sn.prompts) } else { String::new() };
+    let you = [s("you", t.bold(t.accent)), s(latest, fg(t.faint))];
     let claude = [s("✻ ", t.bold(t.claude)), s("claude", t.bold(t.claude))];
     if let Some(a) = asked.filter(|_| asked_n > 0) {
-        y = bubble(buf, t, x, y, w, &clamp_lines(a, width, asked_n), true, t.you_bg, &you);
+        y = bubble(buf, t, x, y, w, &clamp_lines(a, width, asked_n), t.you_bg, &you);
     }
     if let Some(r) = reply.filter(|_| reply_n > 0) {
-        y = bubble(buf, t, x, y, w, &clamp_lines(r, width, reply_n), false, t.claude_bg, &claude);
+        y = bubble(buf, t, x, y, w, &clamp_lines(r, width, reply_n), t.claude_bg, &claude);
         if reply_is_summary {
             y = y.saturating_sub(1);
         }

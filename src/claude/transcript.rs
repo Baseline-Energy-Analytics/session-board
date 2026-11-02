@@ -53,6 +53,8 @@ pub struct TranscriptInfo {
     pub typed: u32,
     /// The first prompt you typed, cut to 1200 characters.
     pub asked: Option<String>,
+    /// The latest prompt you typed, cut to 1200 characters: what Claude's last reply answers.
+    pub last_asked: Option<String>,
     pub ai: Option<String>,
     pub custom: Option<String>,
     pub agent: Option<String>,
@@ -213,9 +215,11 @@ impl Parser {
                 self.pending.clear(); // a new prompt: whatever was asked before isn't waiting any more
                 if !said.is_empty() && !said.starts_with('/') {
                     t.typed += 1;
+                    let prompt = truncate_chars(said, TEXT_LIMIT).to_string();
                     if t.asked.is_none() {
-                        t.asked = Some(truncate_chars(said, TEXT_LIMIT).to_string());
+                        t.asked = Some(prompt.clone());
                     }
+                    t.last_asked = Some(prompt);
                 }
             }
         } else {

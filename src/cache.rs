@@ -10,7 +10,7 @@ use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 
 /// Bump when [`TranscriptInfo`] or its parsing changes; a cache of another version is dropped.
-const VERSION: u32 = 2;
+const VERSION: u32 = 3;
 
 #[derive(Serialize, Deserialize, Default)]
 struct CacheFile {

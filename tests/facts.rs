@@ -648,3 +648,26 @@ fn rows_sort_by_state_then_most_recent() {
     let rows = board::facts::collect_with(&sources(&tmp), &agents(json!([background("bj", "busy")])), NOW);
     assert_eq!(rows.iter().map(|s| s.session_id.as_str()).collect::<Vec<_>>(), ["busy", "e2", "e1"]);
 }
+
+#[test]
+fn the_latest_prompt_is_kept_with_the_first() {
+    let tmp = TempDir::new();
+    let path = transcript("j", "/opt/a").prompts(&["fix the cert", "/compact", "now renew it"]).write(tmp.path());
+    let t = transcript::parse_file(&path).unwrap();
+    assert_eq!(t.asked.as_deref(), Some("fix the cert"));
+    assert_eq!(t.last_asked.as_deref(), Some("now renew it")); // slash commands aren't prompts
+    assert_eq!(t.typed, 2);
+}
+
+#[test]
+fn a_status_that_only_repeats_the_prompt_is_not_a_summary() {
+    let tmp = TempDir::new();
+    let c = claude(&tmp);
+    transcript("j", "/opt/a").prompts(&["first", "read the screenshot and fix the alignment please"]).write(&c);
+    job("jj", "j", "/opt/a").tempo("active").detail("read the screenshot and fix the…").write(&c);
+    transcript("k", "/opt/a").prompts(&["fix the notebook"]).write(&c);
+    job("kk", "k", "/opt/a").tempo("active").detail("Rewriting the retention query").write(&c);
+    let s = collect(&tmp, &agents(json!([background("jj", "j"), background("kk", "k")])));
+    assert_eq!(s["j"].summary, None);
+    assert_eq!(s["k"].summary.as_deref(), Some("Rewriting the retention query"));
+}

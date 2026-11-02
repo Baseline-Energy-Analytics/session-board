@@ -49,15 +49,17 @@ pub(super) fn render(buf: &mut Buffer, w: u16, cx: &Ctx, s: &Session) -> u16 {
         y = strip(buf, cx, x, y, w, s);
     }
 
-    // The conversation: your ask on the right, Claude on the left.
-    if let Some(a) = s.asked.as_deref().filter(|a| !a.trim().is_empty()) {
-        y = bubble(buf, t, x, y, w, a, true, t.you_bg, &[Span::styled("you", t.bold(t.accent))]);
+    // The conversation: your latest prompt, then Claude's latest reply, which answers it.
+    if let Some(a) = s.last_asked.as_deref().or(s.asked.as_deref()).filter(|a| !a.trim().is_empty()) {
+        let latest = if s.prompts > 1 { format!(" · latest of {}", s.prompts) } else { String::new() };
+        let label = [Span::styled("you", t.bold(t.accent)), Span::styled(latest, fg(t.faint))];
+        y = bubble(buf, t, x, y, w, a, t.you_bg, &label);
     }
     let model = s.model.as_deref().map(model_name).unwrap_or_else(|| "Claude".into());
     let label = [Span::styled("claude", t.bold(t.claude)), Span::styled(format!(" · {model}"), fg(t.faint))];
     let reply = s.said.clone().or_else(|| if s.state == State::Running { None } else { s.summary.clone() });
     if let Some(r) = reply.filter(|r| !r.trim().is_empty()) {
-        y = bubble(buf, t, x, y, w, &r, false, t.claude_bg, &label);
+        y = bubble(buf, t, x, y, w, &r, t.claude_bg, &label);
         if s.said.is_some()
             && let Some(sm) = s.summary.as_deref().filter(|m| !m.trim().is_empty())
         {
@@ -74,7 +76,7 @@ pub(super) fn render(buf: &mut Buffer, w: u16, cx: &Ctx, s: &Session) -> u16 {
     }
     if s.state == State::Running {
         let text = s.summary.clone().filter(|m| !m.trim().is_empty()).unwrap_or_else(|| "Working…".into());
-        y = bubble(buf, t, x, y, w, &text, false, t.claude_bg, &label);
+        y = bubble(buf, t, x, y, w, &text, t.claude_bg, &label);
         let working = [
             Span::styled(format!("{} ", spinner(cx.tick)), fg(t.running)),
             Span::styled("working on a turn", fg(t.running).add_modifier(Modifier::ITALIC)),
