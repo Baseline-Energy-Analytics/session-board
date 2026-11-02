@@ -15,6 +15,7 @@
 
 mod lists;
 mod preview;
+mod work;
 
 use super::board_rows;
 use crate::actions::Cursor;

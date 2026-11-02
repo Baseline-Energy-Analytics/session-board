@@ -38,9 +38,9 @@ pub(super) fn render(buf: &mut Buffer, w: u16, cx: &Ctx, s: &Session) -> u16 {
         state_pill(t, s, None),
         Span::styled(format!("  {}", ago_text(s, cx.now)), fg(t.dim)),
     ];
-    if !s.cwd.is_empty() {
+    if !s.folder().is_empty() {
         line.push(Span::styled("  ·  ", fg(t.faint)));
-        line.push(Span::styled(short_path(&s.cwd, cx.home), fg(t.dim)));
+        line.push(Span::styled(short_path(s.folder(), cx.home), fg(t.dim)));
     }
     put(buf, x, y + 1, &widgets::fit(&line, usize::from(w)), w);
     y += 3;
@@ -120,7 +120,10 @@ pub(super) fn render(buf: &mut Buffer, w: u16, cx: &Ctx, s: &Session) -> u16 {
             y = system_line(buf, cx, x, y, w, spans);
         }
     }
-    y
+
+    // What it has done: the files it touched, and where its folder stands in git.
+    y = super::work::files_card(buf, cx, x, y, w, s);
+    super::work::git_card(buf, cx, x, y, w, s)
 }
 
 /// The metadata strip: model, output tokens, job and id, then the context gauge (tokens against
@@ -237,7 +240,7 @@ fn stale(buf: &mut Buffer, cx: &Ctx, x: u16, y: u16, w: u16, s: &Session) -> u16
 
 /// A rounded panel around `body` (one line each); returns the row after it, plus a gap.
 #[allow(clippy::too_many_arguments)]
-fn boxed(buf: &mut Buffer, x: u16, y: u16, w: u16, border: ratatui::style::Color, bg: ratatui::style::Color, title: Line, body: &[Vec<Span>]) -> u16 {
+pub(super) fn boxed(buf: &mut Buffer, x: u16, y: u16, w: u16, border: ratatui::style::Color, bg: ratatui::style::Color, title: Line, body: &[Vec<Span>]) -> u16 {
     let h = body.len() as u16 + 2;
     let inner = panel(buf, Rect::new(x, y, w, h), border, bg, title);
     for (k, l) in body.iter().enumerate() {

@@ -8,6 +8,7 @@ pub mod cache;
 pub mod claude;
 pub mod config;
 pub mod facts;
+pub mod git;
 pub mod mask;
 pub mod proc;
 pub mod report;

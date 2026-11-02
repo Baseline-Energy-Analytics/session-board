@@ -186,6 +186,18 @@ fn project_of() {
     assert_eq!(rules.project_of(&s(opt.join("plex/conf"))), s(opt.join("plex"))); // a workspace's child is its own
     assert_eq!(rules.project_of(&s(opt.clone())), s(opt.clone()));
     assert_eq!(rules.project_of(&s(home.clone())), s(home.clone()));
+    // A linked worktree joins its main repository's project.
+    let wt = repo.join(".claude/worktrees/fix");
+    std::fs::create_dir_all(repo.join(".git/worktrees/fix")).unwrap();
+    std::fs::create_dir_all(&wt).unwrap();
+    std::fs::write(wt.join(".git"), format!("gitdir: {}\n", s(repo.join(".git/worktrees/fix")))).unwrap();
+    assert_eq!(rules.project_of(&s(wt.join("src"))), s(repo.clone()));
+    // So does one kept outside the repository, in the home folder, with a relative gitdir.
+    let outside = home.join("board-fix");
+    std::fs::create_dir_all(repo.join(".git/worktrees/board-fix")).unwrap();
+    std::fs::create_dir_all(&outside).unwrap();
+    std::fs::write(outside.join(".git"), "gitdir: ../board/.git/worktrees/board-fix\n").unwrap();
+    assert_eq!(rules.project_of(&s(outside.clone())), s(repo.clone()));
     let with_tmp = Projects { workspaces: ws, scratch: "/tmp".into() };
     assert_eq!(with_tmp.project_of("/tmp/claude-1000/x"), "/tmp");
 }
@@ -670,4 +682,55 @@ fn a_status_that_only_repeats_the_prompt_is_not_a_summary() {
     let s = collect(&tmp, &agents(json!([background("jj", "j"), background("kk", "k")])));
     assert_eq!(s["j"].summary, None);
     assert_eq!(s["k"].summary.as_deref(), Some("Rewriting the retention query"));
+}
+
+#[test]
+fn a_session_that_moved_into_a_worktree_is_grouped_by_where_it_works() {
+    let tmp = TempDir::new();
+    let home = tmp.join("home");
+    let repo = home.join("app");
+    let wt = repo.join(".claude/worktrees/fix");
+    std::fs::create_dir_all(repo.join(".git/worktrees/fix")).unwrap();
+    std::fs::create_dir_all(&wt).unwrap();
+    std::fs::write(wt.join(".git"), format!("gitdir: {}\n", repo.join(".git/worktrees/fix").display())).unwrap();
+    let (home_s, wt_s) = (home.to_string_lossy().into_owned(), wt.to_string_lossy().into_owned());
+    let moved = json!({"type": "user", "cwd": wt_s, "timestamp": iso(NOW - 500.0),
+                       "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "ok"}]},
+                       "toolUseResult": {"filePath": format!("{wt_s}/src/a.rs"), "structuredPatch": [{"lines": ["+x"]}]}});
+    transcript("s1", &home_s).extra(vec![moved]).write(&tmp.join("claude"));
+    let s = &collect(&tmp, &[])["s1"];
+    assert_eq!(s.cwd, home_s, "actions run where the conversation is kept");
+    assert_eq!(s.workdir.as_deref(), Some(wt_s.as_str()));
+    assert_eq!(s.project, repo.to_string_lossy());
+    assert_eq!(s.files.len(), 1);
+    assert_eq!((s.files[0].added, s.files[0].edits), (1, 1));
+}
+
+#[test]
+fn a_cd_elsewhere_does_not_move_a_session_to_another_project() {
+    let tmp = TempDir::new();
+    let home = tmp.join("home");
+    let repo = home.join("app");
+    std::fs::create_dir_all(repo.join(".git")).unwrap();
+    let scratch = repo.join("notes");
+    std::fs::create_dir_all(&scratch).unwrap();
+    let other = home.join("plain/dir");
+    std::fs::create_dir_all(&other).unwrap();
+    let s = |p: &std::path::Path| p.to_string_lossy().into_owned();
+    let at = |cwd: String| json!({"type": "user", "cwd": cwd, "timestamp": iso(NOW - 500.0),
+                                  "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t", "content": "ok"}]}});
+    // Launched in a repo, then a command ran in a plain folder: stays with the repo.
+    transcript("s1", &s(&repo)).extra(vec![at(s(&other))]).write(&tmp.join("claude"));
+    // Launched in the home workspace, then moved into a repo: joins the repo.
+    transcript("s2", &s(&home)).extra(vec![at(s(&scratch))]).write(&tmp.join("claude"));
+    // Launched in the home workspace, then into a plain folder: stays put.
+    transcript("s3", &s(&home)).extra(vec![at(s(&other))]).write(&tmp.join("claude"));
+    let mut src = sources(&tmp);
+    src.projects.workspaces = vec![s(&home)];
+    let got: std::collections::HashMap<String, Session> =
+        board::facts::collect_with(&src, &[], NOW).into_iter().map(|x| (x.session_id.clone(), x)).collect();
+    assert_eq!(got["s1"].project, s(&repo));
+    assert_eq!(got["s1"].workdir, None, "a passing cd isn't where it works");
+    assert_eq!(got["s2"].project, s(&repo));
+    assert_eq!(got["s3"].project, s(&home));
 }

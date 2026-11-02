@@ -35,6 +35,40 @@ pub struct PendingTool {
     pub arg: String,
 }
 
+/// Changed files kept per transcript, the most recently touched.
+pub const CHANGED_LIMIT: usize = 60;
+/// Files only read kept per transcript, the most recently read.
+pub const READ_LIMIT: usize = 40;
+
+/// A file the conversation read or changed, from its tool results: `Read`, `Edit`, `Write` (and
+/// any tool whose result carries a `filePath` and a patch), and files a shell command changed
+/// (Claude Code's `bashEditDiff`). Paths are as recorded, usually absolute.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct FileTouch {
+    pub path: String,
+    /// Lines added and removed over all its changes.
+    pub added: u32,
+    pub removed: u32,
+    /// Changes made with Edit or Write.
+    pub edits: u32,
+    /// Created by Write (it didn't exist before).
+    pub created: bool,
+    /// Changed by a shell command.
+    pub shell: bool,
+    /// Read with Read.
+    pub read: bool,
+    /// Epoch seconds of the latest touch.
+    pub last: i64,
+}
+
+impl FileTouch {
+    /// Changed at all, not only read.
+    pub fn changed(&self) -> bool {
+        self.edits > 0 || self.created || self.shell
+    }
+}
+
 /// A stretch of activity: consecutive entries less than [`SPAN_GAP`] apart.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Span {
@@ -47,6 +81,9 @@ pub struct Span {
 pub struct TranscriptInfo {
     /// The folder of the first entry that names one.
     pub cwd: Option<String>,
+    /// The folder of the latest entry that names one: where the session is working now, after
+    /// a `cd` or entering a worktree.
+    pub cwd_last: Option<String>,
     /// How the session was started: `cli` for one you started, `sdk-py`, `sdk-cli` for automation.
     pub entry: Option<String>,
     /// Prompts you typed (not slash commands).
@@ -80,6 +117,9 @@ pub struct TranscriptInfo {
     pub output: u64,
     /// Activity spans, oldest first, at most [`SPAN_LIMIT`].
     pub spans: Vec<Span>,
+    /// Files read or changed, most recent first: at most [`CHANGED_LIMIT`] changed and
+    /// [`READ_LIMIT`] only read.
+    pub files: Vec<FileTouch>,
 }
 
 impl TranscriptInfo {
@@ -161,6 +201,8 @@ pub struct Parser {
     outputs: HashMap<Option<String>, u64>,
     /// The span being extended.
     open: Option<Span>,
+    /// Files touched so far, by path.
+    files: HashMap<String, FileTouch>,
 }
 
 impl Parser {
@@ -182,9 +224,15 @@ impl Parser {
     }
 
     fn message(&mut self, kind: &str, e: &Value) {
+        if kind == "user"
+            && let Some(r) = e.get("toolUseResult").filter(|r| r.is_object())
+        {
+            self.tool_result(r, epoch(e.get("timestamp")));
+        }
         let t = &mut self.info;
-        if t.cwd.is_none() {
-            t.cwd = string(e, "cwd");
+        if let Some(c) = string(e, "cwd") {
+            t.cwd.get_or_insert_with(|| c.clone());
+            t.cwd_last = Some(c);
         }
         if t.entry.is_none() {
             t.entry = string(e, "entrypoint");
@@ -241,6 +289,53 @@ impl Parser {
         self.mark(ts, bridged);
     }
 
+    /// The files a tool result read or changed.
+    fn tool_result(&mut self, r: &Value, ts: f64) {
+        let ts = ts as i64;
+        if let Some(path) = text(r, "filePath") {
+            if r.get("structuredPatch").is_some() || r.get("content").is_some() {
+                let f = self.touch(path, ts);
+                f.edits += 1;
+                if text(r, "type") == Some("create") {
+                    f.created = true;
+                    // A new file's patch is empty: all of its content is added.
+                    let content = text(r, "content").unwrap_or("");
+                    f.added += content.lines().count() as u32;
+                } else {
+                    let (a, d) = patch_counts(r.get("structuredPatch"));
+                    f.added += a;
+                    f.removed += d;
+                }
+            }
+        } else if let Some(path) = r.get("file").and_then(|f| text(f, "filePath")) {
+            self.touch(path, ts).read = true;
+        }
+        if let Some(diff) = r.get("bashEditDiff").filter(|d| d.is_object()) {
+            let mut seen: Vec<&str> = Vec::new();
+            for f in diff.get("files").and_then(Value::as_array).into_iter().flatten() {
+                let Some(path) = text(f, "filePath") else { continue };
+                let (a, d) = patch_counts(f.get("hunks"));
+                let t = self.touch(path, ts);
+                t.shell = true;
+                t.added += a;
+                t.removed += d;
+                seen.push(path);
+            }
+            // Files past the ones with hunks are only named.
+            for path in diff.get("changedFiles").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str) {
+                if !seen.contains(&path) {
+                    self.touch(path, ts).shell = true;
+                }
+            }
+        }
+    }
+
+    fn touch(&mut self, path: &str, ts: i64) -> &mut FileTouch {
+        let f = self.files.entry(path.to_string()).or_insert_with(|| FileTouch { path: path.to_string(), ..FileTouch::default() });
+        f.last = f.last.max(ts);
+        f
+    }
+
     fn usage(&mut self, e: &Value, msg: &Value) {
         let Some(model) = text(msg, "model").filter(|m| *m != "<synthetic>") else { return };
         let Some(usage) = msg.get("usage").filter(|u| truthy(Some(u))) else { return };
@@ -276,6 +371,15 @@ impl Parser {
 
     pub fn finish(mut self) -> TranscriptInfo {
         self.info.output = self.outputs.values().sum();
+        let mut files: Vec<FileTouch> = self.files.into_values().collect();
+        files.sort_by(|a, b| b.last.cmp(&a.last).then_with(|| a.path.cmp(&b.path)));
+        let (mut changed, mut read) = (0, 0);
+        files.retain(|f| {
+            let n = if f.changed() { &mut changed } else { &mut read };
+            *n += 1;
+            *n <= if f.changed() { CHANGED_LIMIT } else { READ_LIMIT }
+        });
+        self.info.files = files;
         if let Some((_, p)) = self.pending.pop() {
             self.info.pending = Some(p.what);
             self.info.pending_tool = p.tool;
@@ -315,6 +419,21 @@ fn message_text(content: Option<&Value>) -> String {
             .collect::<Vec<_>>()
             .join("\n"),
     }
+}
+
+/// Lines added and removed in a list of patch hunks (`{lines: ["+…", "-…", " …"]}`).
+fn patch_counts(hunks: Option<&Value>) -> (u32, u32) {
+    let (mut added, mut removed) = (0, 0);
+    for h in hunks.and_then(Value::as_array).into_iter().flatten() {
+        for l in h.get("lines").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str) {
+            if l.starts_with('+') {
+                added += 1;
+            } else if l.starts_with('-') {
+                removed += 1;
+            }
+        }
+    }
+    (added, removed)
 }
 
 /// A token count: a number (truncated) or numeric text; anything else is 0.
@@ -410,6 +529,31 @@ mod tests {
         p.mark(9000.0, true); // a long tool run's result
         let t = p.finish();
         assert_eq!(t.spans, vec![Span { start: 1000.0, end: 1100.0 }, Span { start: 5000.0, end: 9000.0 }]);
+    }
+
+    #[test]
+    fn files_come_from_tool_results() {
+        use serde_json::json;
+        let user = |ts: &str, r: Value| json!({"type": "user", "timestamp": ts, "message": {"content": []}, "toolUseResult": r});
+        let mut p = Parser::default();
+        p.feed(&user("2026-01-01T00:00:01Z", json!({"type": "text", "file": {"filePath": "/r/a.rs"}})));
+        p.feed(&user("2026-01-01T00:00:02Z", json!({"filePath": "/r/a.rs", "oldString": "x",
+            "structuredPatch": [{"lines": [" k", "-old", "+new", "+more"]}]})));
+        p.feed(&user("2026-01-01T00:00:03Z", json!({"type": "create", "filePath": "/r/new.md", "content": "a\nb\nc\n", "structuredPatch": []})));
+        p.feed(&user("2026-01-01T00:00:04Z", json!({"stdout": "", "bashEditDiff": {
+            "files": [{"filePath": "/r/a.rs", "hunks": [{"lines": ["-gone"]}]}], "changedFiles": ["/r/a.rs", "/r/Cargo.lock"]}})));
+        p.feed(&user("2026-01-01T00:00:05Z", json!({"type": "text", "file": {"filePath": "/r/b.rs"}})));
+        // A failed tool's result is text: nothing.
+        p.feed(&user("2026-01-01T00:00:06Z", json!("Error: no such file")));
+        let t = p.finish();
+        let got: Vec<_> = t.files.iter().map(|f| (f.path.as_str(), f.added, f.removed, f.edits, f.created, f.shell, f.read)).collect();
+        assert_eq!(got, vec![
+            ("/r/b.rs", 0, 0, 0, false, false, true),
+            ("/r/Cargo.lock", 0, 0, 0, false, true, false),
+            ("/r/a.rs", 2, 2, 1, false, true, true),
+            ("/r/new.md", 3, 0, 1, true, false, false),
+        ]);
+        assert!(t.files[2].changed() && !t.files[0].changed());
     }
 
     #[test]

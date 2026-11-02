@@ -14,7 +14,8 @@ use crate::claude::agents::{self, Agent};
 use crate::claude::jobs::JobState;
 use crate::claude::roster;
 pub use crate::claude::transcript::PendingTool;
-use crate::claude::transcript::{Span, TranscriptInfo};
+use crate::claude::transcript::{FileTouch, Span, TranscriptInfo};
+use crate::git::{self, GitInfo};
 use crate::config::Config;
 use crate::mask::{flat, mask_secrets};
 use crate::store::{self, Deleted};
@@ -132,6 +133,17 @@ pub struct Session {
     /// Activity spans from the transcript, oldest first.
     #[serde(default)]
     pub spans: Vec<Span>,
+    /// Files it read or changed, most recent first. Never in `--json`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<FileTouch>,
+    /// Where it is working now, when it moved after starting into a worktree, or from a
+    /// workspace (`~`) into a repository. Its project and git state are this folder's; actions
+    /// still run in `cwd`, where Claude Code keeps the conversation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workdir: Option<String>,
+    /// The git state of its working folder now. Never in `--json`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub git: Option<GitInfo>,
 }
 
 impl Session {
@@ -160,7 +172,15 @@ impl Session {
             output: 0,
             waiting_since: None,
             spans: Vec::new(),
+            files: Vec::new(),
+            workdir: None,
+            git: None,
         }
+    }
+
+    /// Where it is working now: [`Session::workdir`], else `cwd`.
+    pub fn folder(&self) -> &str {
+        self.workdir.as_deref().unwrap_or(&self.cwd)
     }
 
     fn sort_key(&self) -> (usize, f64) {
@@ -217,6 +237,31 @@ pub struct ProjectResolver<'a> {
 }
 
 impl ProjectResolver<'_> {
+    /// The project of a session launched in `cwd` that is now working in `workdir`. Claude Code
+    /// moves a session's folder with every `cd`, so the move counts only when it plainly changed
+    /// what the session works on: it is now in a linked worktree (it joins that repository), or
+    /// it was launched from a workspace itself (`~`, `/opt`) and is now in a git repository.
+    /// Also says whether the move counted.
+    pub fn project_for(&mut self, cwd: &str, workdir: Option<&str>) -> (String, bool) {
+        if let Some(w) = workdir {
+            let in_worktree = Path::new(&self.plain_root(w)).join(".git").is_file();
+            let from_workspace = self.rules.workspaces.iter().any(|ws| ws == cwd);
+            if in_worktree || (from_workspace && self.git_root(w).is_some_and(|r| !self.rules.workspaces.contains(&r))) {
+                return (self.project_of(w), true);
+            }
+        }
+        (self.project_of(cwd), false)
+    }
+
+    /// The nearest folder at or above `path` holding `.git`, a worktree's own folder included.
+    fn plain_root(&self, path: &str) -> String {
+        Path::new(path)
+            .ancestors()
+            .find(|d| !d.as_os_str().is_empty() && d.join(".git").exists())
+            .map(|d| d.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "/nonexistent".into())
+    }
+
     pub fn project_of(&mut self, cwd: &str) -> String {
         if cwd.is_empty() {
             return "?".into();
@@ -245,7 +290,9 @@ impl ProjectResolver<'_> {
         root.unwrap_or_else(|| cwd.to_string())
     }
 
-    /// The nearest folder at or above `path` holding `.git` (a folder, or a file for a worktree).
+    /// The nearest folder at or above `path` holding `.git`. For a linked worktree (`.git` is a
+    /// file, `gitdir: <repo>/.git/worktrees/<name>`), the main repository's folder, so a
+    /// session in a worktree joins its repository's project.
     fn git_root(&mut self, path: &str) -> Option<String> {
         if let Some(hit) = self.git_roots.get(path) {
             return hit.clone();
@@ -253,7 +300,12 @@ impl ProjectResolver<'_> {
         let mut dir = Some(Path::new(path));
         let mut found = None;
         while let Some(d) = dir.filter(|d| !d.as_os_str().is_empty() && *d != Path::new("/")) {
-            if d.join(".git").exists() {
+            let dot = d.join(".git");
+            if dot.is_file() {
+                found = Some(main_repo(&dot).unwrap_or_else(|| d.to_string_lossy().into_owned()));
+                break;
+            }
+            if dot.exists() {
                 found = Some(d.to_string_lossy().into_owned());
                 break;
             }
@@ -262,6 +314,29 @@ impl ProjectResolver<'_> {
         self.git_roots.insert(path.to_string(), found.clone());
         found
     }
+}
+
+/// The main repository of a linked worktree, from its `.git` file.
+fn main_repo(dot_git: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(dot_git).ok()?;
+    let gitdir = text.lines().find_map(|l| l.strip_prefix("gitdir:"))?.trim();
+    // A relative gitdir (`worktree.useRelativePaths`) is relative to the worktree; `..` is
+    // resolved by name, not through links.
+    let mut resolved = PathBuf::new();
+    for c in dot_git.parent()?.join(gitdir).components() {
+        match c {
+            std::path::Component::ParentDir => {
+                resolved.pop();
+            }
+            std::path::Component::CurDir => {}
+            other => resolved.push(other),
+        }
+    }
+    let gitdir = resolved;
+    // <repo>/.git/worktrees/<name>
+    let worktrees = gitdir.parent().filter(|p| p.file_name().is_some_and(|n| n == "worktrees"))?;
+    let repo_git = worktrees.parent().filter(|p| p.file_name().is_some_and(|n| n == ".git"))?;
+    Some(repo_git.parent()?.to_string_lossy().into_owned())
 }
 
 /// Sessions by project: the project with the most urgent session first, then the most recent.
@@ -335,7 +410,11 @@ pub fn collect(src: &Sources, generation: u64) -> Snapshot {
     let transcripts = cache::load_transcripts(&src.claude_dir, &src.cache_path, src.days, now);
     let deleted = store::load_deleted(&src.deleted_path);
     let agents = cli.finish(agents::TIMEOUT).unwrap_or_else(|| agents::from_files(&src.claude_dir));
-    let sessions = build(src, &transcripts, &agents, &deleted);
+    let mut sessions = build(src, &transcripts, &agents, &deleted);
+    let repos = git::read_all(sessions.iter().map(Session::folder));
+    for s in &mut sessions {
+        s.git = repos.get(s.folder()).cloned();
+    }
     Snapshot { now, generation, sessions }
 }
 
@@ -471,8 +550,14 @@ fn build(src: &Sources, transcripts: &[(String, TranscriptInfo)], agents: &[Agen
 
 /// A row with what every kind takes from its transcript.
 fn row(sid: &str, title: String, cwd: String, state: State, last: f64, t: &TranscriptInfo, projects: &mut ProjectResolver) -> Session {
-    let project = projects.project_of(&cwd);
+    // Where it works now, when that differs from where it was launched and still exists.
+    // Kept only when it moved what the session works on (see `project_for`), so its project,
+    // folder and git state agree.
+    let workdir = t.cwd_last.clone().filter(|w| *w != cwd && Path::new(w).is_dir());
+    let (project, moved) = projects.project_for(&cwd, workdir.as_deref());
+    let workdir = workdir.filter(|_| moved);
     Session {
+        workdir,
         asked: t.asked.clone(),
         last_asked: t.last_asked.clone(),
         prompts: t.typed,
@@ -482,6 +567,7 @@ fn row(sid: &str, title: String, cwd: String, state: State, last: f64, t: &Trans
         context: t.context,
         output: t.output,
         spans: t.spans.clone(),
+        files: t.files.clone(),
         ..Session::new(sid, &title, &cwd, &project, state, last)
     }
 }

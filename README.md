@@ -16,7 +16,13 @@ Tab (and Shift+Tab) cycles them.
 
 - **Columns** (the default): projects → sessions → the conversation. A pinned "Needs you" entry gathers
   every session waiting on you; the conversation column shows your ask, Claude's reply, and what it is
-  waiting on, with a pending tool call split into the tool and its command.
+  waiting on, with a pending tool call split into the tool and its command. Below that are two cards:
+  - **Files:** the files the session changed (✎ edited, + created, $ changed by a shell command, with
+    lines added and removed), then the ones it only read, folded by folder.
+  - **Git:** its folder's branch, ahead/behind its upstream as of the last fetch, uncommitted files,
+    the last commit and the number of worktrees. The board never fetches.
+
+  ![Files and Git cards](docs/shots/columns-work-160x50.svg)
 - **Timeline**: each session's activity on a 24-hour or 7-day axis (`t` switches), with a marker where a
   session started waiting on you and how long it has waited.
   ![Timeline view](docs/shots/timeline-24h.svg)
@@ -72,6 +78,9 @@ Make sure `~/.local/bin` is on your `PATH`. To update, `git pull` and run the `c
 | ◇ | not running | A background job that claims to need you or to be working, but Claude Code has no process for it: its state is out of date (after a reboot, say). Enter starts it again. |
 | ○ | ended | A saved conversation. Enter resumes it in the background. |
 
+A session that moved into a git worktree is listed under the worktree's repository, wherever the
+worktree's folder is. So is one launched from a workspace (`~`) that moved into a repository.
+
 ## Configuration
 
 Defaults work without any config. To change them, create `~/.config/session-board/config.toml`:
@@ -102,6 +111,11 @@ Under tmux, which often hides `COLORTERM`, set `SESSION_BOARD_COLOR=truecolor` (
 `mod/` is a Claude Code mod. It draws a band above the prompt in every session when other sessions need
 you, e.g. "◆ 2 other sessions need you: Fix the flaky auth test · Rotate the staging certs ·
 Ctrl+Z: board". It reads `board --json` every 30 seconds.
+
+It also adds **`/board`**: a pane beside the chat listing every live session, needs-you first and then
+by project. The details at the top (state, model, context) follow the arrow keys; Enter or `c` copies
+the session's `claude attach` command; Esc closes the pane. It can't jump into another session (no mod can end
+`claude attach`); Ctrl+Z to the full board does that.
 
 To load it in every session, add this to the `env` block of `~/.claude/settings.json`, using the path
 of your clone:

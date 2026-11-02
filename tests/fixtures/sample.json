@@ -18,7 +18,49 @@
    "was": null,
    "model": "claude-opus-5-5",
    "context": 182000,
-   "output": 31000
+   "output": 31000,
+   "files": [
+    {
+     "path": "/home/u/work/api/tests/test_auth.py",
+     "last": 1793549500,
+     "added": 14,
+     "removed": 2,
+     "edits": 2
+    },
+    {
+     "path": "/home/u/work/api/tests/conftest.py",
+     "last": 1793549440,
+     "added": 9,
+     "edits": 1
+    },
+    {
+     "path": "/home/u/work/api/src/auth/session.py",
+     "last": 1793549300,
+     "read": true
+    },
+    {
+     "path": "/home/u/work/api/src/auth/refresh.py",
+     "last": 1793549250,
+     "read": true
+    },
+    {
+     "path": "/home/u/work/api/src/auth/clock.py",
+     "last": 1793549240,
+     "read": true
+    }
+   ],
+   "git": {
+    "root": "/home/u/work/api",
+    "branch": "main",
+    "upstream": "origin/main",
+    "ahead": 0,
+    "behind": 3,
+    "modified": 2,
+    "worktrees": 3,
+    "fetched": 1793549400,
+    "commit_at": 1793377200,
+    "commit": "Pin pytest-randomly"
+   }
   },
   {
    "session_id": "a2",
@@ -37,7 +79,109 @@
    "was": null,
    "model": "claude-sonnet-4-5-20250929",
    "context": 64000,
-   "output": 12000
+   "output": 12000,
+   "files": [
+    {
+     "path": "/home/u/work/api/src/db/models.py",
+     "last": 1793377140,
+     "added": 48,
+     "removed": 31,
+     "edits": 4
+    },
+    {
+     "path": "/home/u/work/api/src/db/migrations/0042_orm_v3.py",
+     "last": 1793376900,
+     "added": 96,
+     "edits": 1,
+     "created": true
+    },
+    {
+     "path": "/home/u/work/api/poetry.lock",
+     "last": 1793376780,
+     "added": 212,
+     "removed": 180,
+     "shell": true
+    },
+    {
+     "path": "/home/u/work/api/src/db/session.py",
+     "last": 1793376600,
+     "added": 12,
+     "removed": 9,
+     "edits": 2
+    },
+    {
+     "path": "/home/u/work/api/tests/test_models.py",
+     "last": 1793376300,
+     "added": 22,
+     "removed": 4,
+     "edits": 1
+    },
+    {
+     "path": "/home/u/work/api/src/api/users.py",
+     "last": 1793376100,
+     "added": 3,
+     "removed": 3,
+     "edits": 1
+    },
+    {
+     "path": "/home/u/work/api/src/api/orders.py",
+     "last": 1793376050,
+     "added": 5,
+     "removed": 5,
+     "edits": 1
+    },
+    {
+     "path": "/home/u/work/api/pyproject.toml",
+     "last": 1793376000,
+     "added": 1,
+     "removed": 1,
+     "edits": 1
+    },
+    {
+     "path": "/home/u/work/api/src/db/base.py",
+     "last": 1793375700,
+     "read": true
+    },
+    {
+     "path": "/home/u/work/api/src/db/engine.py",
+     "last": 1793375700,
+     "read": true
+    },
+    {
+     "path": "/home/u/work/api/src/db/types.py",
+     "last": 1793375600,
+     "read": true
+    },
+    {
+     "path": "/home/u/work/api/src/api/deps.py",
+     "last": 1793375500,
+     "read": true
+    },
+    {
+     "path": "/home/u/work/api/docs/upgrading.md",
+     "last": 1793375400,
+     "read": true
+    },
+    {
+     "path": "/home/u/work/api/README.md",
+     "last": 1793375300,
+     "read": true
+    }
+   ],
+   "git": {
+    "root": "/home/u/work/api",
+    "branch": "orm-v3",
+    "upstream": "origin/orm-v3",
+    "ahead": 2,
+    "behind": 0,
+    "staged": 1,
+    "modified": 4,
+    "untracked": 1,
+    "worktrees": 3,
+    "fetched": 1793539200,
+    "commit_at": 1793375700,
+    "commit": "Move models to the v3 declarative base"
+   }
   },
   {
    "session_id": "a3",
@@ -90,7 +234,7 @@
    "said": null,
    "stopped": false,
    "root": null,
-   "waiting": "rate limited \u2014 wait and retry",
+   "waiting": "rate limited — wait and retry",
    "was": "needs you",
    "model": "claude-opus-5-5",
    "context": 90000,
@@ -110,7 +254,10 @@
    "stopped": false,
    "root": null,
    "waiting": "Bash: kubectl -n edge rollout restart deploy/ingress",
-   "pending_tool": {"name": "Bash", "arg": "kubectl -n edge rollout restart deploy/ingress"},
+   "pending_tool": {
+    "name": "Bash",
+    "arg": "kubectl -n edge rollout restart deploy/ingress"
+   },
    "was": null,
    "model": "claude-sonnet-4-5-20250929",
    "context": 31000,

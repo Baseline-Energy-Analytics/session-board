@@ -67,8 +67,34 @@ counts `resumeSessionId` as the current conversation only when that transcript b
 No field records a parent session. Infer one from the same folder plus a time window that contains the
 automated session's start; that matched 85 of 159.
 
-## Git (per repo)
+## Files a session touched
 
-Run `git status --porcelain --branch`, `git worktree list --porcelain` and `git log @{u}..HEAD`, with
-`GIT_OPTIONAL_LOCKS=0` so they stay read-only. Credit dirty files and commits to the session that edited
-them, then the folder owner, then "Not from any session".
+A `user` entry that answers a tool call carries the tool's result in `toolUseResult` (checked on
+2.1.316):
+
+- `Read`: `{type: "text", file: {filePath, …}}`.
+- `Edit` / `Write`: `{filePath, structuredPatch: [{lines: ["+…", "-…", " …"]}], …}`; `Write` adds
+  `type: "create"` (the patch is empty, `content` is the new file) or `"update"`.
+- `Bash`: `bashEditDiff: {files: [{filePath, hunks}], changedFiles, moreFiles}` when the command changed
+  files, so `sed -i`, scripts and `git checkout` show up too.
+- A failed call's result is a string.
+
+The board counts `+`/`-` lines per file. It keeps 60 changed and 40 read-only files per transcript.
+
+## Where a session works
+
+Each entry's `cwd` follows the session as it moves: a `cd` in a shell command, or entering a worktree.
+Claude Code (and `claude agents`) report the launch folder, and the transcript stays under the launch
+folder's project directory. The board groups a session by its latest folder only when that folder is a
+linked worktree, or when the session was launched from a workspace (`~`) and is now in a repository.
+Otherwise a passing `cd` would move it. A linked worktree's `.git` is a file, `gitdir:
+<repo>/.git/worktrees/<name>` (absolute, or relative with `worktree.useRelativePaths`). The board
+follows it to the main repository, so a worktree joins its repository's project wherever its folder is.
+Actions still run in the launch folder, where `claude --resume` finds the conversation.
+
+## Git (per folder)
+
+The Git card runs `git --no-optional-locks` (read-only: `status` doesn't refresh the index) with
+`rev-parse --show-toplevel --git-common-dir`, `status --porcelain=v2 --branch`, `log -1` and
+`worktree list --porcelain`. It never fetches. Ahead/behind are as of the last fetch, so the card shows
+`FETCH_HEAD`'s time beside them. Folders are read in parallel, each answer reused for 20 seconds.
